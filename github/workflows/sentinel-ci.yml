@@ -32,3 +32,135 @@ jobs:
       run: |
         curl --fail http://localhost:8000/health/env || exit 1
       continue-on-error: true
+name: Sentinel CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  AWS_REGION:    us-east-1
+  K8S_NAMESPACE: cos
+
+jobs:
+  lint_and_test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint with flake8
+        run: flake8 .
+
+      - name: Run unit tests
+        run: pytest --maxfail=1 --disable-warnings -q
+
+  build_and_push_images:
+    name: Build & Push Docker Images
+    needs: lint_and_test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build & Push `celestial` Image
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          file: docker/Dockerfile.celestial
+          push: true
+          tags:
+            - ${{ env.ECR_REGISTRY }}/celestial:latest
+
+      - name: Build & Push `proxy` Image
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          file: docker/Dockerfile.proxy
+          push: true
+          tags:
+            - ${{ env.ECR_REGISTRY }}/proxy:latest
+
+  request_approval:
+    name: Request Microsoft Approval
+    needs: build_and_push_images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Python deps
+        run: pip install python-dotenv
+
+      - name: Request Permission
+        env:
+          DEPLOY_SMTP_USER: ${{ secrets.DEPLOY_SMTP_USER }}
+          DEPLOY_SMTP_PASS: ${{ secrets.DEPLOY_SMTP_PASS }}
+          DEPLOY_IMAP_USER: ${{ secrets.DEPLOY_IMAP_USER }}
+          DEPLOY_IMAP_PASS: ${{ secrets.DEPLOY_IMAP_PASS }}
+        run: |
+          chmod +x ./bin/request_permission.py
+          ./bin/request_permission.py
+
+  deploy_to_k8s:
+    name: Deploy to Kubernetes
+    needs: request_approval
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Install kubectl & eksctl
+        run: |
+          curl -o kubectl https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          curl -sL "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin/
+
+      - name: Update kubeconfig
+        run: eksctl utils write-kubeconfig --cluster cos-cluster --region ${{ env.AWS_REGION }}
+
+      - name: Apply Kubernetes Manifests
+        run: |
+          kubectl apply -n $K8S_NAMESPACE -f k8s/secrets.yaml
+          kubectl apply -n $K8S_NAMESPACE -f k8s/deployment.yaml
+          kubectl apply -n $K8S_NAMESPACE -f k8s/cronjob-the-unknown.yaml
+          kubectl apply -n $K8S_NAMESPACE -f k8s/ingress.yaml
+
+      - name: Verify Deployment
+        run: |
+          kubectl rollout status deploy/cos-sentinel -n $K8S_NAMESPACE
+          kubectl get pods -n $K8S_NAMESPACE --selector=app=cos-sentinel
