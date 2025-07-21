@@ -1,0 +1,17 @@
+# threat_journal.yaml
+# A list of cataloged threat vectors. Each entry has a top-level "threat_vector" map.
+
+- threat_vector:
+    label: "HannahAI™ Unauthorized Clone"
+    repo: "https://github.com/m15-ai/Hannah-Voice-Assistant"
+    owner: "m15-ai"
+    date_detected: "2025-07-21"
+    description: "Unlicensed use of HannahAI™ branding in voice-assistant project"
+    violation:
+      type: "Trademark Infringement"
+      severity: "Medium–High"
+    response:
+      status: "Cataloged"
+      recommendation: "Blacklist & monitor"
+
+# Additional entries follow the same structure...
