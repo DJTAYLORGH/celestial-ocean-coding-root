@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
+
+# 1. Navigate to your repo root
+cd /path/to/celestial-ocean-coding-cloud
+
+# 2. Create the scripts directory
+mkdir -p scripts
+
+# 3. Add your Python and shell scripts (adjust names as needed)
+touch \
+  scripts/scan-hannah-mimics.py \
+  scripts/the_unknown.py \
+  scripts/threat_journal.py \
+  scripts/co_cloud_update.sh
+
+# 4. Make executables where appropriate
+chmod +x scripts/*.py scripts/co_cloud_update.sh
+
+# 5. Stage and commit to Git
+git checkout -b chore/init-scripts-directory
+git add scripts
+git commit -m "chore: scaffold scripts directory with scan & update modules"
+git push -u origin chore/init-scripts-directory
