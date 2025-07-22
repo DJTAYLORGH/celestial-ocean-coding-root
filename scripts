@@ -1,25 +1,59 @@
-#!/usr/bin/env bash
-set -euo pipefail
-IFS=$'\n\t'
+#!/usr/bin/env python3
+"""
+co_cloud_manager.py
 
-# 1. Navigate to your repo root
-cd /path/to/celestial-ocean-coding-cloud
+Unified Celestial Ocean Coding™ Cloud manager:
+  • Scans GitHub for unauthorized “HannahAI” clones
+  • Ingests & normalizes external data via the_unknown
+  • Maintains threat_journal.yaml & config/blacklist_repos.txt
+  • Auto-pulls Cassandra Ocean repo, commits & pushes changes
+"""
 
-# 2. Create the scripts directory
-mkdir -p scripts
+import os
+import sys
+import json
+import yaml
+import hashlib
+import requests
+import subprocess
+import aiohttp
+import asyncio
+from datetime import datetime
+from statistics import mean, stdev
+from pathlib import Path
 
-# 3. Add your Python and shell scripts (adjust names as needed)
-touch \
-  scripts/scan-hannah-mimics.py \
-  scripts/the_unknown.py \
-  scripts/threat_journal.py \
-  scripts/co_cloud_update.sh
+# ─── Configuration ─────────────────────────────────────────────────────────────
+GITHUB_TOKEN     = os.getenv("GITHUB_TOKEN")
+AUTHORIZED_ORG   = "DJTAYLORGH"
+REPO_SSH         = "git@github.com:DJTAYLORGH/celestial-ocean-coding-cloud.git"
+CLONE_DIR        = Path(os.getenv("CLONE_DIR", "/opt/co-cloud"))
+THREAT_JOURNAL   = CLONE_DIR / "threat_journal.yaml"
+BLACKLIST_FILE   = CLONE_DIR / "config/blacklist_repos.txt"
+SCAN_QUERY       = 'HannahAI in:name,description OR Hannah-Voice in:name'
+UNKNOWN_CONFIG   = CLONE_DIR / "scripts/the_unknown.yaml"
+REPLICATE_DIR    = Path("/data/the_unknown/replicants")
+BOT_NAME         = "Celestial Bot"
+BOT_EMAIL        = "ci@celestial-ocean.local"
+BRANCH           = "main"
 
-# 4. Make executables where appropriate
-chmod +x scripts/*.py scripts/co_cloud_update.sh
+# ─── Threat Journal Management ────────────────────────────────────────────────
+class ThreatJournal:
+    def __init__(self, path: Path):
+        self.path = path
+        self.entries = self._load()
 
-# 5. Stage and commit to Git
-git checkout -b chore/init-scripts-directory
-git add scripts
-git commit -m "chore: scaffold scripts directory with scan & update modules"
-git push -u origin chore/init-scripts-directory
+    def _load(self):
+        if self.path.exists():
+            data = yaml.safe_load(self.path.read_text()) or []
+            return data if isinstance(data, list) else []
+        return []
+
+    def save(self):
+        self.path.write_text(yaml.safe_dump(self.entries, sort_keys=False))
+
+    def add(self, vector: dict):
+        repo = vector["threat_vector"]["repo"]
+        if any(e["threat_vector"]["repo"] == repo for e in self.entries):
+            return False
+        if "date_detected" not in vector["threat_vector"]:
+            vector["threat_vector"]["date_detected"] = datetime.utcnow
