@@ -1,0 +1,41 @@
+name: Auto-Update Threat Journal
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install requests pyyaml
+
+      - name: Run scan & update files
+        run: |
+          chmod +x scripts/scan-hannah-mimics.py
+          python3 scripts/scan-hannah-mimics.py > threat_journal.yaml
+          python3 scripts/scan-hannah-mimics.py \
+            | awk '/^    "https?:\/\// { gsub(/[,"]/, ""); print }' \
+            > config/blacklist_repos.txt
+
+      - name: Commit & push
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: chore: auto-update threat journal & blacklist
+          branch: main
+          author_name: Celestial Bot
+          author_email: ci@celestial-ocean.local
+          file_pattern: |
+            threat_journal.yaml
+            config/blacklist_repos.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
