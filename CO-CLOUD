@@ -1,3 +1,64 @@
+#!/usr/bin/env bash
+# co_cloud_update.sh — Auto-update Threat Journal & Blacklist
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# ─── Configuration ─────────────────────────────────────────────────────────────
+REPO="git@github.com:DJTAYLORGH/celestial-ocean-coding-cloud.git"
+CLONE_DIR="/opt/co-cloud"
+SCAN_SCRIPT="scripts/scan-hannah-mimics.py"
+JOURNAL_FILE="threat_journal.yaml"
+BLACKLIST_FILE="config/blacklist_repos.txt"
+BRANCH="main"
+BOT_NAME="Celestial Bot"
+BOT_EMAIL="ci@celestial-ocean.local"
+
+: "${GITHUB_TOKEN:?Environment variable GITHUB_TOKEN must be set}"
+
+# ─── Step 1: Clone or Pull Repo ───────────────────────────────────────────────
+if [ ! -d "$CLONE_DIR/.git" ]; then
+  git clone "$REPO" "$CLONE_DIR"
+else
+  git -C "$CLONE_DIR" pull --ff-only origin "$BRANCH"
+fi
+
+cd "$CLONE_DIR"
+
+# ─── Step 2: Install Dependencies ─────────────────────────────────────────────
+python3 -m pip install --upgrade pip
+python3 -m pip install requests pyyaml
+
+# ─── Step 3: Run Scan & Update Files ──────────────────────────────────────────
+chmod +x "$SCAN_SCRIPT"
+
+# Generate updated journal
+python3 "$SCAN_SCRIPT" > "$JOURNAL_FILE"
+
+# Extract blacklist URLs
+python3 "$SCAN_SCRIPT" \
+  | awk '/^    "https?:\/\// { gsub(/[,"]/, ""); print }' \
+  > "$BLACKLIST_FILE"
+
+# ─── Step 4: Commit & Push ───────────────────────────────────────────────────
+git fetch origin "$BRANCH"
+git checkout "$BRANCH"
+git add "$JOURNAL_FILE" "$BLACKLIST_FILE"
+
+if git diff --cached --quiet; then
+  echo "No changes detected; nothing to commit."
+else
+  git -c user.name="$BOT_NAME" \
+      -c user.email="$BOT_EMAIL" \
+      commit -m "chore: auto-update threat journal & blacklist"
+  git push origin "$BRANCH"
+  echo "Changes pushed to origin/$BRANCH"
+fi
+
+echo "✅ Update complete."
+
+chmod +x co_cloud_update.sh
+
 # ── Install Android platform tools ─────────────────────────────────────────
 echo "▶ Installing Android ADB/FASTBOOT…"
 if command -v apt-get &> /dev/null; then
