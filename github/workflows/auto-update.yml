@@ -1,37 +1,46 @@
-name: Auto-Update Threat Journal
+# .github/workflows/auto-update.yml
+name: Auto-Update CO-Cloud Threat Journal & Blacklist
 
 on:
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '0 05 * * *'    # daily at 05:00 UTC
   workflow_dispatch:
 
 jobs:
-  update:
+  update-threat-journal:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Celestial Ocean Cloud repo
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
 
-      - name: Install dependencies
-        run: pip install requests pyyaml
+      - name: Install scan script dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install requests pyyaml
 
-      - name: Run scan & update files
+      - name: Run HannahAI™ mimic scan & write Threat Journal
         run: |
           chmod +x scripts/scan-hannah-mimics.py
-          python3 scripts/scan-hannah-mimics.py > threat_journal.yaml
+          python3 scripts/scan-hannah-mimics.py \
+            > threat_journal.yaml
+
+      - name: Extract blacklist entries
+        run: |
           python3 scripts/scan-hannah-mimics.py \
             | awk '/^    "https?:\/\// { gsub(/[,"]/, ""); print }' \
             > config/blacklist_repos.txt
 
-      - name: Commit & push
+      - name: Commit & push updates
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: chore: auto-update threat journal & blacklist
           branch: main
+          commit_message: chore: auto-update threat journal & blacklist
           author_name: Celestial Bot
           author_email: ci@celestial-ocean.local
           file_pattern: |
