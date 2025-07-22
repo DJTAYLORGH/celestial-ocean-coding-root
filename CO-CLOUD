@@ -1,0 +1,12 @@
+# ── Install Android platform tools ─────────────────────────────────────────
+echo "▶ Installing Android ADB/FASTBOOT…"
+if command -v apt-get &> /dev/null; then
+  apt-get install -y android-tools-adb android-tools-fastboot
+elif command -v yum &> /dev/null; then
+  yum install -y android-tools
+elif command -v pkg &> /dev/null; then
+  # Termux on Android
+  pkg install -y android-tools
+else
+  echo "⚠️  Please install android-tools-adb & android-tools-fastboot manually."
+fi
